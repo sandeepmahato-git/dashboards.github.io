@@ -1,159 +1,223 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Agile PI Metrics Dashboard</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body {
-      font-family: Segoe UI, Arial, sans-serif;
-      background: #f4f6f9;
-      margin: 20px;
-    }
-    h2 {
-      margin-bottom: 10px;
-    }
-    .kpi-container {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 15px;
-      margin-bottom: 25px;
-    }
-    .kpi {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-      text-align: center;
-    }
-    .kpi h3 {
-      margin: 0;
-      font-size: 14px;
-      color: #666;
-    }
-    .kpi p {
-      font-size: 26px;
-      margin: 5px 0 0;
-      font-weight: bold;
-    }
-    .charts {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 25px;
-    }
-    canvas {
-      background: white;
-      padding: 15px;
-      border-radius: 6px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Project PI Executive Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+body {
+    font-family: Arial, sans-serif;
+    background: #f5f7fa;
+    margin: 0;
+}
+.header {
+    background: #0b3c5d;
+    color: white;
+    padding: 14px 24px;
+    font-size: 20px;
+}
+.container {
+    padding: 20px;
+}
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.kpi {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+    text-align: center;
+}
+.kpi h3 {
+    font-size: 14px;
+    margin: 0;
+    color: #555;
+}
+.kpi p {
+    font-size: 26px;
+    margin: 8px 0 0;
+    font-weight: bold;
+}
+.green { color: #2ecc71; }
+.amber { color: #f39c12; }
+.red { color: #e74c3c; }
+
+.filters {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+select {
+    padding: 6px;
+}
+
+.charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+.chart-box {
+    background: white;
+    padding: 15px;
+    border-radius: 8px;
+}
+canvas {
+    height: 280px !important;
+}
+</style>
 </head>
+
 <body>
+<div class="header">📊 Project PI Executive Dashboard</div>
 
-<h2>Agile PI Metrics – Summary Dashboard</h2>
+<div class="container">
 
-<div class="kpi-container">
-  <div class="kpi"><h3>Planned SP</h3><p id="plannedSP">-</p></div>
-  <div class="kpi"><h3>Completed SP</h3><p id="completedSP">-</p></div>
-  <div class="kpi"><h3>Predictability %</h3><p id="predictability">-</p></div>
-  <div class="kpi"><h3>Total Defects</h3><p id="defects">-</p></div>
-  <div class="kpi"><h3>Budget Used %</h3><p id="budget">-</p></div>
+<div class="filters">
+    <div>
+        <label>PI:</label>
+        <select id="piFilter"></select>
+    </div>
+    <div>
+        <label>Sprint:</label>
+        <select id="sprintFilter"></select>
+    </div>
+</div>
+
+<div class="kpi-grid">
+    <div class="kpi"><h3>PI Predictability</h3><p id="kpiPredictability">--</p></div>
+    <div class="kpi"><h3>Planned SP</h3><p id="kpiPlanned">--</p></div>
+    <div class="kpi"><h3>Completed SP</h3><p id="kpiCompleted">--</p></div>
+    <div class="kpi"><h3>Defect Leakage %</h3><p id="kpiDefect">--</p></div>
+    <div class="kpi"><h3>Capacity Utilization %</h3><p id="kpiCapacity">--</p></div>
 </div>
 
 <div class="charts">
-  <canvas id="spChart"></canvas>
-  <canvas id="velocityChart"></canvas>
-  <canvas id="defectChart"></canvas>
+    <div class="chart-box">
+        <h3>PI Velocity Burn-up</h3>
+        <canvas id="velocityChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Predictability Trend</h3>
+        <canvas id="predictabilityChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Defects Raised vs Fixed</h3>
+        <canvas id="defectChart"></canvas>
+    </div>
+    <div class="chart-box">
+        <h3>Team Velocity</h3>
+        <canvas id="teamVelocityChart"></canvas>
+    </div>
+</div>
+
 </div>
 
 <script>
-fetch("data.json")
-  .then(response => response.json())
-  .then(data => {
+let rawData = [];
 
-    /* ---- ASSUMPTION ----
-       Adjust sheet names & column names
-       based on your actual JSON structure
-    ---------------------*/
+fetch("SAFe_PI_All_Metrics_Combined.csv")
+.then(res => res.text())
+.then(csv => {
+    const rows = csv.split("\n").map(r => r.split(","));
+    const headers = rows.shift();
+    rawData = rows.map(r => Object.fromEntries(headers.map((h,i)=>[h,r[i]])));
+    initFilters();
+    updateDashboard();
+});
 
-    const delivery = data["Delivery"] || data[Object.keys(data)[0]];
-    
-    let teams = [];
-    let plannedSP = [];
-    let completedSP = [];
+function initFilters(){
+    const piSet = [...new Set(rawData.map(d => d["PI Number"]).filter(Boolean))];
+    const sprintSet = [...new Set(rawData.map(d => d["Sprint Number"]).filter(Boolean))];
 
-    let totalPlanned = 0;
-    let totalCompleted = 0;
+    piFilter.innerHTML = piSet.map(p => `<option>${p}</option>`).join("");
+    sprintFilter.innerHTML = `<option>All</option>` + sprintSet.map(s => `<option>${s}</option>`).join("");
 
-    delivery.forEach(row => {
-      teams.push(row.Team);
-      plannedSP.push(row.Planned_SP);
-      completedSP.push(row.Completed_SP);
-      totalPlanned += row.Planned_SP;
-      totalCompleted += row.Completed_SP;
+    piFilter.onchange = sprintFilter.onchange = updateDashboard;
+}
+
+function updateDashboard(){
+    const pi = piFilter.value;
+    const sprint = sprintFilter.value;
+
+    const data = rawData.filter(d =>
+        d["PI Number"] === pi &&
+        (sprint === "All" || d["Sprint Number"] === sprint)
+    );
+
+    const sum = (k) => data.reduce((a,b)=>a+(+b[k]||0),0);
+
+    const planned = sum("Total Planned Story Points");
+    const completed = sum("Total Completed Story Points");
+    const predictability = planned ? ((completed/planned)*100).toFixed(2) : 0;
+
+    document.getElementById("kpiPlanned").innerText = planned;
+    document.getElementById("kpiCompleted").innerText = completed;
+    document.getElementById("kpiPredictability").innerText = predictability + "%";
+
+    renderVelocity(data);
+    renderPredictability(data);
+    renderDefects(data);
+    renderTeamVelocity(data);
+}
+
+function renderVelocity(data){
+    const labels = data.map(d => d["Sprint Number"]);
+    new Chart(velocityChart, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [
+                { label:"Planned", data:data.map(d=>+d["Total Planned Story Points"]), borderColor:"#3498db" },
+                { label:"Completed", data:data.map(d=>+d["Total Completed Story Points"]), borderColor:"#2ecc71" }
+            ]
+        }
     });
+}
 
-    const predictability = ((totalCompleted / totalPlanned) * 100).toFixed(1);
-
-    document.getElementById("plannedSP").innerText = totalPlanned;
-    document.getElementById("completedSP").innerText = totalCompleted;
-    document.getElementById("predictability").innerText = predictability + "%";
-
-    // Dummy values if separate sheets exist
-    document.getElementById("defects").innerText = 42;
-    document.getElementById("budget").innerText = "92%";
-
-    /* ---- Planned vs Completed SP ---- */
-    new Chart(document.getElementById("spChart"), {
-      type: "bar",
-      data: {
-        labels: teams,
-        datasets: [
-          { label: "Planned SP", data: plannedSP },
-          { label: "Completed SP", data: completedSP }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: { title: { display: true, text: "Planned vs Completed Story Points" } }
-      }
+function renderPredictability(data){
+    new Chart(predictabilityChart, {
+        type:"line",
+        data:{
+            labels:data.map(d=>d["Sprint Number"]),
+            datasets:[{
+                label:"Predictability %",
+                data:data.map(d=>+d["PI Predictability (%)"]),
+                borderColor:"#9b59b6"
+            }]
+        }
     });
+}
 
-    /* ---- Velocity Trend ---- */
-    new Chart(document.getElementById("velocityChart"), {
-      type: "line",
-      data: {
-        labels: teams,
-        datasets: [{
-          label: "Completed SP",
-          data: completedSP,
-          tension: 0.3
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { title: { display: true, text: "Delivery / Velocity Trend" } }
-      }
+function renderDefects(data){
+    new Chart(defectChart, {
+        type:"bar",
+        data:{
+            labels:data.map(d=>d["Sprint Number"]),
+            datasets:[
+                { label:"Raised", data:data.map(d=>+d["Total Defects Raised"]), backgroundColor:"#e74c3c" },
+                { label:"Fixed", data:data.map(d=>+d["Total Defects Fixed"]), backgroundColor:"#2ecc71" }
+            ]
+        }
     });
+}
 
-    /* ---- Defect Summary ---- */
-    new Chart(document.getElementById("defectChart"), {
-      type: "bar",
-      data: {
-        labels: ["New", "Closed", "Escaped"],
-        datasets: [{
-          label: "Defects",
-          data: [20, 15, 7]
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { title: { display: true, text: "Defect Summary" } }
-      }
+function renderTeamVelocity(data){
+    const teamData = data.filter(d=>d["Team Name"]);
+    new Chart(teamVelocityChart,{
+        type:"bar",
+        data:{
+            labels:teamData.map(d=>d["Team Name"]),
+            datasets:[{
+                label:"Velocity",
+                data:teamData.map(d=>+d["Velocity"]),
+                backgroundColor:"#34495e"
+            }]
+        }
     });
-
-  });
+}
 </script>
-
 </body>
 </html>
